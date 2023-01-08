@@ -669,7 +669,7 @@ struct utracy_source_location {
 	int unsigned color;
 };
 
-static struct utracy_source_location srclocs[0x10002];
+static struct utracy_source_location srclocs[0x14000];
 
 UTRACY_INTERNAL UTRACY_INLINE
 void utracy_emit_zone_begin(int unsigned proc) {
@@ -902,7 +902,7 @@ void *utracy_server_thread_start(void *user) {
 /* byond hooks */
 UTRACY_INTERNAL
 struct object UTRACY_WINDOWS_CDECL UTRACY_LINUX_REGPARM(3) exec_proc(struct proc *proc) {
-	if(likely(proc->procdef < 0x10000)) {
+	if(likely(proc->procdef < 0x14000)) {
 		utracy_emit_zone_begin(proc->procdef);
 
 		/* procs with pre-existing contexts are resuming from sleep */
@@ -1162,7 +1162,7 @@ void build_srclocs(void) {
 #define byond_get_misc(id) (id < *byond.miscs_len ? *(*byond.miscs + id) : NULL)
 #define byond_get_procdef(id) (id < *byond.procdefs_len ? *byond.procdefs + id : NULL)
 
-	for(int unsigned i=0; i<0x10000; i++) {
+	for(int unsigned i=0; i<0x14000; i++) {
 		char const *name = NULL;
 		char const *function = "<?>";
 		char const *file = "<?.dm>";
@@ -1377,11 +1377,11 @@ char *UTRACY_WINDOWS_CDECL UTRACY_LINUX_CDECL init(int argc, char **argv) {
 	
 #if defined(UTRACY_LINUX)
 	struct stat st = {0};
-	if (stat("/data", &st) == -1) {
-		mkdir("/data", 0777);
+	if (stat("data", &st) == -1) {
+		mkdir("data", 0777);
 	}
-	if (stat("/data/profiler", &st) == -1) {
-		mkdir("/data/profiler", 0777);
+	if (stat("data/profiler", &st) == -1) {
+		mkdir("data/profiler", 0777);
 	}
 #else
 	(void) CreateDirectoryW(L".\\data", NULL);
@@ -1393,7 +1393,7 @@ char *UTRACY_WINDOWS_CDECL UTRACY_LINUX_CDECL init(int argc, char **argv) {
 	snprintf(ffilename, MAX_PATH, ".\\data\\profiler\\%llu.utracy", utracy_tsc());
 #elif defined(UTRACY_LINUX)
 	char ffilename[FILENAME_MAX];
-	snprintf(ffilename, FILENAME_MAX, "/data/profiler/%llu.utracy", utracy_tsc());
+	snprintf(ffilename, FILENAME_MAX, "data/profiler/%llu.utracy", utracy_tsc());
 #endif
 	
 	utracy.fstream = fopen(ffilename, "wb");
