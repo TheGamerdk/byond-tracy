@@ -224,6 +224,10 @@ size_t strlen(char const *const a) {
 #	define LOG_INFO(...)
 #endif
 
+#include <stdio.h>
+#define LOG_DEBUG_ERROR fprintf(stderr, "err: %s %s:%d\n", __func__, __FILE__, __LINE__)
+#define LOG_INFO(...) fprintf(stdout, __VA_ARGS__)
+
 /* config */
 #define EVENT_QUEUE_CAPACITY (1u << 18u)
 _Static_assert((EVENT_QUEUE_CAPACITY & (EVENT_QUEUE_CAPACITY - 1)) == 0, "EVENT_QUEUE_CAPACITY must be a power of 2");
@@ -1434,7 +1438,9 @@ UTRACY_EXTERNAL
 char *UTRACY_WINDOWS_CDECL UTRACY_LINUX_CDECL destroy(int argc, char **argv) {
 	(void) argc;
 	(void) argv;
-
+	
+	printf("dying\n");
+	
 	/* not yet implemented */
 	if(1 != initialized) {
 		return "not initialized";
@@ -1453,12 +1459,13 @@ char *UTRACY_WINDOWS_CDECL UTRACY_LINUX_CDECL destroy(int argc, char **argv) {
 	#else
 	uint64_t u = 1;
 	write(utracy.quit, &u, sizeof(uint64_t));
+	printf("written\n");
 	int status = pthread_join(utracy.thread, NULL);	
 	if(status != 0) {
 		LOG_DEBUG_ERROR;
 	}
 	#endif
-
+	printf("thread join\n");
 	fclose(utracy.fstream);
 	initialized = 0;
 
