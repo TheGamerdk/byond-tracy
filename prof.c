@@ -102,6 +102,7 @@ _Static_assert(sizeof(long long) == 8, "incorrect size");
 #	include <unistd.h>
 #	include <time.h>
 #	include <sys/syscall.h>
+#	include <sys/eventfd.h>
 #	include <sys/types.h>
 #	include <sys/socket.h>
 #	include <sys/mman.h>
@@ -112,6 +113,8 @@ _Static_assert(sizeof(long long) == 8, "incorrect size");
 #	include <netinet/ip.h>
 #	include <arpa/inet.h>
 #	include <poll.h>
+#	include <sys/stat.h>
+#	define WaitForSingleObject WaitForEvent
 #endif
 
 #include <stddef.h>
@@ -188,7 +191,7 @@ size_t strlen(char const *const a) {
 #	define min(a, b) (((a) < (b)) ? (a) : (b))
 #endif
 
-#if defined(UTRACY_CLANG) || defined(UTRACY_GCC)
+#if defined(UTRACY_CLANG) || (defined(UTRACY_GCC) && __GNUC__ > 9)
 #	if __has_builtin(__builtin_memcpy)
 #		define UTRACY_MEMCPY __builtin_memcpy
 #	else
@@ -377,9 +380,19 @@ static struct {
 		long long epoch;
 		long long exec_time;
 	} info;
-
+	
+	
+	
+	
+#if defined(UTRACY_WINDOWS)
 	HANDLE thread;
 	HANDLE quit;
+#elif defined(UTRACY_LINUX)
+	int thread;
+	int quit;
+#endif
+	
+	
 	FILE *fstream;
 
 	struct {
@@ -838,6 +851,9 @@ void *utracy_server_thread_start(void *user) {
 			(void) utracy_write(&evt, sizeof(evt));
 		}
 
+		
+		
+		#if defined(UTRACY_WINDOWS)
 		switch(WaitForSingleObject(utracy.quit, 1)) {
 			default:
 				LOG_DEBUG_ERROR;
@@ -847,6 +863,33 @@ void *utracy_server_thread_start(void *user) {
 			case WAIT_TIMEOUT:
 				break;
 		}
+		#else
+		/*
+		struct timespec ts;
+		ts.tv_sec += 1;
+		int status = pthread_timedjoin_np(utracy.quit, NULL, &ts);	
+		switch(status) {
+			case 0: {
+				quitting = 1;
+				break;
+			}
+			case default: {
+				break;
+			}
+		} */
+		if(utracy.quit > -1) {
+			struct pollfd wait_object;
+			wait_object.fd = utracy.quit;
+			wait_object.events = POLLIN;
+			wait_object.revents = 0;
+			int status = poll(&wait_object, 1, 1);
+			if(status > 0) {
+				if((wait_object.revents & POLLIN)) {
+					quitting = 1;
+				}
+			}
+		}
+		#endif
 	}
 
 #if defined(UTRACY_WINDOWS)
@@ -1316,17 +1359,43 @@ char *UTRACY_WINDOWS_CDECL UTRACY_LINUX_CDECL init(int argc, char **argv) {
 	linux_main_tid = syscall(__NR_gettid);
 #endif
 
+
+	
+#if defined(UTRACY_LINUX)
+	utracy.quit = eventfd(0, 0);
+	
+#else
 	utracy.quit = CreateEventA(NULL, TRUE, FALSE, NULL);
 	if(NULL == utracy.quit) {
 		LOG_DEBUG_ERROR;
 		return "CreateEventA failed";
 	}
+#endif
+	
 
+	
+	
+#if defined(UTRACY_LINUX)
+	struct stat st = {0};
+	if (stat("/data", &st) == -1) {
+		mkdir("/data", 0777);
+	}
+	if (stat("/data/profiler", &st) == -1) {
+		mkdir("/data/profiler", 0777);
+	}
+#else
 	(void) CreateDirectoryW(L".\\data", NULL);
 	(void) CreateDirectoryW(L".\\data\\profiler", NULL);
+#endif	
 
+#if defined(UTRACY_WINDOWS)
 	char ffilename[MAX_PATH];
 	snprintf(ffilename, MAX_PATH, ".\\data\\profiler\\%llu.utracy", utracy_tsc());
+#elif defined(UTRACY_LINUX)
+	char ffilename[FILENAME_MAX];
+	snprintf(ffilename, FILENAME_MAX, "/data/profiler/%llu.utracy", utracy_tsc());
+#endif
+	
 	utracy.fstream = fopen(ffilename, "wb");
 	if(NULL == utracy.fstream) {
 		LOG_DEBUG_ERROR;
@@ -1353,6 +1422,7 @@ char *UTRACY_WINDOWS_CDECL UTRACY_LINUX_CDECL init(int argc, char **argv) {
 		LOG_DEBUG_ERROR;
 		return "pthread_create failed";
 	}
+	utracy.thread = thr;
 
 #endif
 
@@ -1370,14 +1440,24 @@ char *UTRACY_WINDOWS_CDECL UTRACY_LINUX_CDECL destroy(int argc, char **argv) {
 		return "not initialized";
 	}
 
-	(void) SetEvent(utracy.quit);
+	
 
+	#if defined(UTRACY_WINDOWS)
+	(void) SetEvent(utracy.quit);
+	
 	switch(WaitForSingleObject(utracy.thread, INFINITE)) {
 		case WAIT_OBJECT_0:
 			break;
 		default:
 			LOG_DEBUG_ERROR;
+	#else
+	uint64_t u = 1;
+	write(utracy.quit, &u, sizeof(uint64_t));
+	int status = pthread_join(utracy.thread, NULL);	
+	if(status != 0) {
+		LOG_DEBUG_ERROR;
 	}
+	#endif
 
 	fclose(utracy.fstream);
 	initialized = 0;
